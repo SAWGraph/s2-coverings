@@ -13,7 +13,7 @@ from shapely.geometry.polygon import signed_area
 from shapely.wkt import loads
 
 from .config import config
-from .kwg_ont import KWGOnt, generate_cell_iri
+from .kwg_ont import KWGOnt, SPATIAL, generate_cell_iri
 
 
 class GeometricFeature:
@@ -71,7 +71,7 @@ class GeometricFeature:
             Generator[S2CellId, None, None]: a generator of crossing cell IDs
         """
         homogeneous_coverer = S2RegionCoverer()
-        homogeneous_coverer.set_min_level(config.min)
+        homogeneous_coverer.set_min_level(config.min_level)
         homogeneous_coverer.set_max_level(config.max_level)
         buff = buffer(line_obj, tolerance / 100, 2)
         for cell_id in self.covering(buff, homogeneous_coverer, tolerance=tolerance):
@@ -80,29 +80,38 @@ class GeometricFeature:
     def yield_s2_relations(
         self, coverer: S2RegionCoverer, tolerance: float = config.tolerance
     ) -> Generator[tuple[URIRef, URIRef, URIRef], None, None]:
+        spatial_predicate = SPATIAL.connectedTo
         if isinstance(self.geometry, (Polygon, MultiPolygon)):
             predicate = KWGOnt.sfContains
             inverse = KWGOnt.sfWithin
             for cell_id in self.filling(self.geometry, coverer, tolerance):
                 yield self.iri, predicate, generate_cell_iri(cell_id)
                 yield generate_cell_iri(cell_id), inverse, self.iri
+                yield self.iri, spatial_predicate, generate_cell_iri(cell_id)
+                yield generate_cell_iri(cell_id), spatial_predicate, self.iri
 
             predicate = KWGOnt.sfOverlaps
             for cell_id in self.yield_overlapping_ids(self.geometry, tolerance):
                 yield self.iri, predicate, generate_cell_iri(cell_id)
                 yield generate_cell_iri(cell_id), predicate, self.iri
+                yield self.iri, spatial_predicate, generate_cell_iri(cell_id)
+                yield generate_cell_iri(cell_id), spatial_predicate, self.iri
 
         elif isinstance(self.geometry, (LineString, MultiLineString)):
             predicate = KWGOnt.sfCrosses
             for cell_id in self.yield_crossing_ids(self.geometry, tolerance):
                 yield self.iri, predicate, generate_cell_iri(cell_id)
                 yield generate_cell_iri(cell_id), predicate, self.iri
+                yield self.iri, spatial_predicate, generate_cell_iri(cell_id)
+                yield generate_cell_iri(cell_id), spatial_predicate, self.iri
 
         elif isinstance(self.geometry, Point):
             s2_point = self.s2_from_coords(self.geometry)
             cell_id = S2CellId(s2_point).parent(config.max_level)
             yield self.iri, KWGOnt.sfWithin, generate_cell_iri(cell_id)
             yield generate_cell_iri(cell_id), KWGOnt.sfContains, self.iri
+            yield self.iri, spatial_predicate, generate_cell_iri(cell_id)
+            yield generate_cell_iri(cell_id), spatial_predicate, self.iri
 
         else:
             geom_type = self.geometry.geom_type
