@@ -4,6 +4,7 @@ import os
 from functools import partial
 from multiprocessing import Pool
 from pathlib import Path
+from rdflib import Graph
 
 from s2geometry import S2CellId, S2RegionCoverer
 from shapely.geometry import MultiPolygon, Polygon
@@ -35,7 +36,7 @@ class Integrator:
         if compressed:
             output_folder += "_compressed"
 
-        os.makedirs(output_folder, exist_ok=True)
+        # os.makedirs(output_folder, exist_ok=True)
 
         write = partial(
             self.write_all_relations,
@@ -44,8 +45,16 @@ class Integrator:
         )
 
         with Pool() as pool:
-            pool.map(write, enumerate(yield_geometric_features(data_path)))
-
+            graphs = pool.map(write, enumerate(yield_geometric_features(data_path)))
+        
+        graph = Graph()
+        for g in graphs:
+            graph += g
+        for pfx in namespace_prefix:
+            graph.bind(pfx, namespace_prefix[pfx])
+        file_name = 's2_.ttl'
+        destination = os.path.join(output_folder, file_name)
+        graph.serialize(destination=output_folder, format="ttl")
         print(f"Done! \nRelations written in path '{output_folder}'.")
 
     @staticmethod
@@ -76,9 +85,10 @@ class Integrator:
         else:
             coverer.set_min_level(0)
         graph = feature.s2_graph(coverer, tolerance=tolerance)
-        if graph:
-            for pfx in namespace_prefix:
-                graph.bind(pfx, namespace_prefix[pfx])
-            file_name = f"{idx}.ttl"
-            destination = os.path.join(output_folder, file_name)
-            graph.serialize(destination=destination, format="ttl")
+        # if graph:
+            # for pfx in namespace_prefix:
+                # graph.bind(pfx, namespace_prefix[pfx])
+            # file_name = f"{idx}.ttl"
+            # destination = os.path.join(output_folder, file_name)
+            # graph.serialize(destination=destination, format="ttl")
+        return graph
